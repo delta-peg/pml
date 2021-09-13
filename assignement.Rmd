@@ -56,11 +56,18 @@ validation = validation %>% select(!ignored_columns)
 
 Also, if we find very high correlation between any pair of the remaining predictors (at least numerical ones), we might exclude some redundant ones and avoid overfitting.
 
+Indeed, we do find some pockets of highly correlated features:
+
 ```{r}
 numeric_columns = which(sapply(training, is.numeric))
 correlation_matrix = cor(training[,numeric_columns])
-highly_correlated = findCorrelation(correlation_matrix, cutoff=0.9, exact=TRUE)
 corrplot(correlation_matrix, type = "lower", tl.cex = 0.5, tl.col = 'black')
+```
+
+
+```{r}
+highly_correlated = findCorrelation(correlation_matrix, cutoff=0.9, exact=TRUE)
+
 ```
 
 ```{r}
