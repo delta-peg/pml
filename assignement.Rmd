@@ -1,0 +1,91 @@
+---
+title: 'Practical Machine Learning: Exercise'
+author: "Julian Jordi"
+date: "2021-09"
+output: html_document
+---
+
+## Summary
+We analyze the Human Actitivty Recognition dataset provided by groupware  [here](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har) to predict how well a particular exercise was performed.
+
+The final model chosen is a ...
+
+## The Data
+Let's have a first look at the data
+```{r message=FALSE, warning=FALSE}
+library(tidyverse); library(caret); library(corrplot)
+```
+```{r}
+training_raw = read_csv("pml-training.csv")
+```
+
+
+So we have a total of 160 columns and 19622 records. In other words, 159 potential predictors for the variable 'classe', which we want to predict.
+We have enough data to set aside a portion as a validation set. This will allow us to validate different models before deciding which on to use for the final prediction.
+
+```{r}
+
+partition = createDataPartition(y=training_raw$classe, p=0.8, list = F)
+training = training_raw %>% slice(partition)
+validation = training_raw %>% slice(-partition)
+dim(training)
+dim(validation)
+```
+
+Before we start training models, let's look if there are some obvious predictors which we do not need.
+
+First of all, for many predictors, we have almost no measurements. Any prediction based on these would be highly unreliable. We therefore collect these columns for exclusion. This throws away 100 of the 159 possible predictors!
+
+```{r}
+min_required_observations = 1000  # we require at least 1000 valid measurements for a predictor to be included
+ignored_columns = which(colSums(!is.na(training_raw) & training_raw != "") < min_required_observations)
+length(ignored_columns)
+```
+
+Second, we do not care so much about any of the 'timestamp' columns. Event though it is entirely possible that the the day, or time of day, when a particular exercise is performance, does correlate with the _quality_ with which it is performed, this should also be predictable by the other, concrete, measurements. In other words, we should get a good prediction even without these columns.
+
+Also, notice the first column in the dataset is just an index column which holds no predictive value. We exclude it also.
+
+```{r}
+timestamp_columns = names(training_raw) %>% grep(pattern = "timestamp")
+index_column = 1
+ignored_columns = c(ignored_columns, timestamp_columns, index_column)
+training = training %>% select(!ignored_columns)
+validation = validation %>% select(!ignored_columns)
+```
+
+Also, if we find very high correlation between any pair of the remaining predictors (at least numerical ones), we might exclude some redundant ones and avoid overfitting.
+
+```{r}
+numeric_columns = which(sapply(training, is.numeric))
+correlation_matrix = cor(training[,numeric_columns])
+highly_correlated = findCorrelation(correlation_matrix, cutoff=0.9, exact=TRUE)
+corrplot(correlation_matrix, type = "lower", tl.cex = 0.5, tl.col = 'black')
+```
+
+```{r}
+
+
+```
+
+
+## Model Building
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Use of Cross Validation
+
+In-Sample error....
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+## Results
+When applying to test set
