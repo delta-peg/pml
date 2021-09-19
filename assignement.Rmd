@@ -13,10 +13,13 @@ The final model chosen is a ...
 ## The Data
 Let's have a first look at the data
 ```{r message=FALSE, warning=FALSE}
-library(tidyverse); library(caret); library(corrplot)
+library(tidyverse); library(caret); library(corrplot); library(parallel); library(doParallel)
+
+set.seed(1000)
 ```
 ```{r}
 training_raw = read_csv("pml-training.csv")
+training_raw$classe = as.factor(training_raw$classe)
 ```
 
 
@@ -50,8 +53,8 @@ Also, notice the first column in the dataset is just an index column which holds
 timestamp_columns = names(training_raw) %>% grep(pattern = "timestamp")
 index_column = 1
 ignored_columns = c(ignored_columns, timestamp_columns, index_column)
-training = training %>% select(!ignored_columns)
-validation = validation %>% select(!ignored_columns)
+training = training %>% select(!all_of(ignored_columns))
+validation = validation %>% select(!all_of(ignored_columns))
 ```
 
 Also, if we find very high correlation between any pair of the remaining predictors (at least numerical ones), we might exclude some redundant ones and avoid overfitting.
@@ -61,30 +64,52 @@ Indeed, we do find some pockets of highly correlated features:
 ```{r}
 numeric_columns = which(sapply(training, is.numeric))
 correlation_matrix = cor(training[,numeric_columns])
-corrplot(correlation_matrix, type = "lower", tl.cex = 0.5, tl.col = 'black')
+corrplot(correlation_matrix, type = "lower", tl.cex = 0.5, tl.col = 'black', title = "Correlation among Predictors")
 ```
 
+Caret's `findCorrelation` function gives us the columns which we should remove to reduce pair-wise correlations. At this point, it is unclear if removing these columns make the model better and/or faster. To compare both, we keep a separate training and validation set for these predictors.
 
 ```{r}
-highly_correlated = findCorrelation(correlation_matrix, cutoff=0.9, exact=TRUE)
-
+columns_to_remove = findCorrelation(correlation_matrix, exact=TRUE)
+print(paste("removing columns", paste(columns_to_remove, collapse = ", "), "due to high correlation (>0.9) with one other columns"))
+training_uncorrelated = training %>% select(!all_of(columns_to_remove))
+validation_uncorrelated = validation %>% select(!all_of(columns_to_remove))
 ```
-
-```{r}
-
-
-```
-
+Let us now build and compare some models with these training and validation sets.
 
 ## Model Building
+This kind of problem seems to be well-suited to random forest type methods. The reasoning for this is that such forests can capture very diverse ...TODO
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+### Training a Random Forest
+We use the caret package to train the model, as this allows us to profit from the built-in parameter tuning. In particular, caret will zero in on the most important predictors to avoid overfitting.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+To shorten training time, we use parallel processing and use 5-fold cross-validation as resampling technique. This is less computationally intensive than the default bootstrap method. But, as it turns out, the accuracy of the produced model is still quite satisfactory
+```{r, cache=TRUE}
+trainCtl = trainControl(allowParallel = T) # use parallel computing, otherwise standard training configuration
+trainCtlCv = trainControl(allowParallel = T, method = "cv", number = 5) # use 5-fold cross validation for resampling
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
 
-```{r cars}
-summary(cars)
+# system.time(fit <- train(x=x, y=y, method="rf", trControl = trainCtl)) # this takes a long time, and the resulting model is not better than with cross-validation
+system.time(random_forest_fit <- train(classe ~ ., method="rf", data = training_uncorrelated, trControl = trainCtlCv))
+random_forest_fit
 ```
+
+
+### Training Boosted Decision Trees
+This model uses the `gbm` package to build a boosted model based on decision trees.
+```{r, cache=TRUE}
+registerDoParallel(cluster)
+
+system.time(boosted_trees_fit <- train(classe ~ ., method="gbm", data=training_uncorrelated, verbose=F, trControl = trainCtl))
+stopCluster(cluster)
+registerDoSEQ()
+boosted_trees_fit
+```
+
+## Model Selection
+We now pick the most promising model among the three. We do this by comparing their performance on the validation set.
+
 
 ## Use of Cross Validation
 
