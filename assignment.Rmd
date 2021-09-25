@@ -22,8 +22,7 @@ training_raw$classe = as.factor(training_raw$classe)
 dim(training_raw)
 ```
 
-
-So we have a total of 160 columns and 19622 observations In other words, 159 potential predictors for the variable `classe`, which we want to predict.
+So we have a total of 160 columns and 19622 observations In %>% other words, 159 potential predictors for the variable `classe`, which we want to predict.
 
 We have enough data to set aside a portion, say 20%, as a validation set. This will allow us to validate different models before deciding which on to use for the final prediction.
 
@@ -32,7 +31,7 @@ partition = createDataPartition(y=training_raw$classe, p=0.8, list = F)
 training = training_raw %>% slice(partition)
 validation = training_raw %>% slice(-partition)
 ```
-## Removing some Predictors
+## Removing some Predictors %>% 
 Before we start training models, let's look if there are some obvious predictors which we do not need.
 
 First of all, for many predictors, we have almost no measurements. Any prediction based on these would be highly unreliable. We therefore collect these columns for exclusion. This throws away 100 of the 159 possible predictors!

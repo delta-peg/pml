@@ -369,14 +369,14 @@ set.seed(1000)</code></pre>
 training_raw$classe = as.factor(training_raw$classe)
 dim(training_raw)</code></pre>
 <pre><code>## [1] 19622   160</code></pre>
-<p>So we have a total of 160 columns and 19622 observations In other words, 159 potential predictors for the variable <code>classe</code>, which we want to predict.</p>
+<p>So we have a total of 160 columns and 19622 observations In %&gt;% other words, 159 potential predictors for the variable <code>classe</code>, which we want to predict.</p>
 <p>We have enough data to set aside a portion, say 20%, as a validation set. This will allow us to validate different models before deciding which on to use for the final prediction.</p>
 <pre class="r"><code>partition = createDataPartition(y=training_raw$classe, p=0.8, list = F)
 training = training_raw %&gt;% slice(partition)
 validation = training_raw %&gt;% slice(-partition)</code></pre>
 </div>
 <div id="removing-some-predictors" class="section level2">
-<h2>Removing some Predictors</h2>
+<h2>Removing some Predictors %&gt;%</h2>
 <p>Before we start training models, let’s look if there are some obvious predictors which we do not need.</p>
 <p>First of all, for many predictors, we have almost no measurements. Any prediction based on these would be highly unreliable. We therefore collect these columns for exclusion. This throws away 100 of the 159 possible predictors!</p>
 <pre class="r"><code>min_required_observations = 1000  # we require at least 1000 valid measurements for a predictor to be included
