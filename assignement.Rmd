@@ -8,33 +8,31 @@ output: html_document
 ## Summary
 We analyze the Human Actitivty Recognition dataset provided by groupware  [here](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har) to predict how well a particular exercise was performed.
 
-The final model chosen is a ...
+The final model chosen is a boosted decision tree model. Its prediction accuracy on a validation sample, set aside from the training set, is extremely high: It misclassified only one (1) out of over 3900 validation samples.
 
 ## The Data
 Let's have a first look at the data
 ```{r message=FALSE, warning=FALSE}
 library(tidyverse); library(caret); library(corrplot); library(parallel); library(doParallel)
-
 set.seed(1000)
 ```
-```{r}
+```{r message=FALSE}
 training_raw = read_csv("pml-training.csv")
 training_raw$classe = as.factor(training_raw$classe)
+dim(training_raw)
 ```
 
 
-So we have a total of 160 columns and 19622 records. In other words, 159 potential predictors for the variable 'classe', which we want to predict.
-We have enough data to set aside a portion as a validation set. This will allow us to validate different models before deciding which on to use for the final prediction.
+So we have a total of 160 columns and 19622 observations In other words, 159 potential predictors for the variable `classe`, which we want to predict.
+
+We have enough data to set aside a portion, say 20%, as a validation set. This will allow us to validate different models before deciding which on to use for the final prediction.
 
 ```{r}
-
 partition = createDataPartition(y=training_raw$classe, p=0.8, list = F)
 training = training_raw %>% slice(partition)
 validation = training_raw %>% slice(-partition)
-dim(training)
-dim(validation)
 ```
-
+## Removing some Predictors
 Before we start training models, let's look if there are some obvious predictors which we do not need.
 
 First of all, for many predictors, we have almost no measurements. Any prediction based on these would be highly unreliable. We therefore collect these columns for exclusion. This throws away 100 of the 159 possible predictors!
@@ -45,9 +43,9 @@ ignored_columns = which(colSums(!is.na(training_raw) & training_raw != "") < min
 length(ignored_columns)
 ```
 
-Second, we do not care so much about any of the 'timestamp' columns. Event though it is entirely possible that the the day, or time of day, when a particular exercise is performance, does correlate with the _quality_ with which it is performed, this should also be predictable by the other, concrete, measurements. In other words, we should get a good prediction even without these columns.
+Second, we do not care so much about any of the `timestamp` columns. Event though it is entirely possible that the the day, or time of day, when a particular exercise is performance, does correlate with the _quality_ with which it is performed, this should also be predictable by the other, concrete, measurements. In other words, we should get a good prediction even without these columns.
 
-Also, notice the first column in the dataset is just an index column which holds no predictive value. We exclude it also.
+Also, notice the first column in the data set is just an index column which holds no predictive value. We exclude it also.
 
 ```{r}
 timestamp_columns = names(training_raw) %>% grep(pattern = "timestamp")
@@ -67,7 +65,7 @@ correlation_matrix = cor(training[,numeric_columns])
 corrplot(correlation_matrix, type = "lower", tl.cex = 0.5, tl.col = 'black', title = "Correlation among Predictors")
 ```
 
-Caret's `findCorrelation` function gives us the columns which we should remove to reduce pair-wise correlations. At this point, it is unclear if removing these columns make the model better and/or faster. To compare both, we keep a separate training and validation set for these predictors.
+Caret's `findCorrelation` function gives us the columns which we should remove to reduce pair-wise correlations. At this point, it is unclear if removing these columns make the model better and/or faster. But, as it turns out, we can leave them out and still achieve very high prediction accuracy.
 
 ```{r}
 columns_to_remove = findCorrelation(correlation_matrix, exact=TRUE)
@@ -75,49 +73,91 @@ print(paste("removing columns", paste(columns_to_remove, collapse = ", "), "due 
 training_uncorrelated = training %>% select(!all_of(columns_to_remove))
 validation_uncorrelated = validation %>% select(!all_of(columns_to_remove))
 ```
-Let us now build and compare some models with these training and validation sets.
 
 ## Model Building
-This kind of problem seems to be well-suited to random forest type methods. The reasoning for this is that such forests can capture very diverse ...TODO
+This kind of problem seems to be well-suited to random forest type and/or boosted models. The reasoning for this is that such models can account for complex if-else-then relationships between predictors.
+
+We therefore train two models: a pure random forest, and a boosted model based on decision trees.
+
+We use the caret package to train both models, as this allows us to profit from the built-in parameter tuning. For the random forest, caret will determine the most useful predictors to avoid overfitting. For the boosted decision trees, it will select an appropriate number of boosting iterations and depth of the individual trees.
+
+To shorten training time, we use parallel processing and use 5-fold cross-validation as resampling technique. This is less computationally intensive than the default bootstrapping method. But, as it turns out, the accuracy of the produced models is still quite satisfactory.
+
+```{r}
+trainParallelCrossValidation = trainControl(allowParallel = T, method = "cv", number = 5) # use 5-fold cross validation for resampling
+cluster <- makeCluster(detectCores() - 2)
+registerDoParallel(cluster)
+```
+
 
 ### Training a Random Forest
-We use the caret package to train the model, as this allows us to profit from the built-in parameter tuning. In particular, caret will zero in on the most important predictors to avoid overfitting.
+Train a random forest by using `method="rf"`.
 
-To shorten training time, we use parallel processing and use 5-fold cross-validation as resampling technique. This is less computationally intensive than the default bootstrap method. But, as it turns out, the accuracy of the produced model is still quite satisfactory
-```{r, cache=TRUE}
-trainCtl = trainControl(allowParallel = T) # use parallel computing, otherwise standard training configuration
-trainCtlCv = trainControl(allowParallel = T, method = "cv", number = 5) # use 5-fold cross validation for resampling
-cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
-registerDoParallel(cluster)
-
-# system.time(fit <- train(x=x, y=y, method="rf", trControl = trainCtl)) # this takes a long time, and the resulting model is not better than with cross-validation
-system.time(random_forest_fit <- train(classe ~ ., method="rf", data = training_uncorrelated, trControl = trainCtlCv))
+```{r train_rf, cache=TRUE}
+random_forest_fit = train(classe ~ ., method="rf", data = training_uncorrelated, trControl = trainParallelCrossValidation)
 random_forest_fit
+```
+The final model uses 500 trees and the 27 most important predictors.
+```{r}
+random_forest_fit$finalModel$ntree
+random_forest_fit$finalModel$mtry
 ```
 
 
 ### Training Boosted Decision Trees
-This model uses the `gbm` package to build a boosted model based on decision trees.
-```{r, cache=TRUE}
-registerDoParallel(cluster)
 
-system.time(boosted_trees_fit <- train(classe ~ ., method="gbm", data=training_uncorrelated, verbose=F, trControl = trainCtl))
+This model uses the `gbm` package to build a boosted model based on decision trees.
+
+After training an initial model, we realized accuracy increases sharply with increasing number of boosting iterations, and it is very low for interaction depths 1 and 2. We therefore adapt a non-default caret tuning grid, leaving out interaction depth 1, as well as models with only 50 iterations.
+
+```{r train_gbm, cache=TRUE}
+gbmGrid <-  expand.grid(interaction.depth = c(2, 3, 5), # depth 1 is not needed
+                        n.trees = (2:6)*50, # 50 iterations are not needed
+                        shrinkage = 0.1, # same as default
+                        n.minobsinnode = 10) # same as default
+
+boosted_trees_fit = train(classe ~ ., method="gbm", data=training_uncorrelated, verbose=F, trControl = trainParallelCrossValidation, tuneGrid = gbmGrid)
 stopCluster(cluster)
 registerDoSEQ()
 boosted_trees_fit
 ```
 
-## Model Selection
-We now pick the most promising model among the three. We do this by comparing their performance on the validation set.
+The following plot illustrates our reasoning for allowing larger tree depths and number of boosting iterations than caret does by default (3 and 150, respectively). In particular when the max tree depth is kept small, increasing the number of iterations above 150 greatly helps accuracy.
+
+```{r}
+plot(boosted_trees_fit)
+```
 
 
 ## Use of Cross Validation
+Cross validation is used by the caret package automatically during training of the models to select the most promising model parameter values. 
 
-In-Sample error....
+In order to speed up the training, we switched from the standard bootstrapping resampling to 5-fold cross validation. In other words, caret built models for each parameter combination in the tuning grid (for random forest, there is only one tuning parameter: the number of used predictors `mtry`), trains these models on the subset without the withheld samples of the current fold, and predicts the withheld samples. It does this on each of the five folds.
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+Finally, caret selects the best model (i.e. parameter combination) as the one with the highest _average prediction accuracy_ on the five folds     (different quality metrics can be specified, but we did not).
+
+## Expected Out of Sample Error and Model Selection
+We use the validation set, which we set aside in the beginning, to estimate the out of sample error.
+
+### Random Forest Model
+```{r}
+predict(random_forest_fit, validation_uncorrelated) %>% confusionMatrix(validation_uncorrelated$classe)
 ```
 
-## Results
-When applying to test set
+### Boosted Trees Model
+```{r}
+predict(boosted_trees_fit, validation_uncorrelated) %>% confusionMatrix(validation_uncorrelated$classe)
+```
+
+Both models perform very well. The gradient boosted model only misclassifies a single one of the 3923 validation observations. The random forest model misclassifies 8 observations, which is still very good. We nonetheless use the boosted tree model for our final predictions.
+
+The expected out of sample error rate is then well under 0.001.
+
+In particular, we should be able to classify all 20 testing observations correctly.
+
+## Results on the Test Set
+We predict the following `classe` for the observations in the test set:
+```{r message=FALSE}
+read_csv("pml-testing.csv") %>% predict(object = boosted_trees_fit)
+```
+
